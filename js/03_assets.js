@@ -85,6 +85,13 @@ function imgReady(img) {
   return !!(img && img.complete && img.naturalWidth > 0);
 }
 
+/* 加载失败过的素材（重试后仍然失败才记进来）。
+   排查"某个兵种变成色块"时，在控制台敲 __assetFailures 就能看到是哪几张图。
+   天空/地形这 4 张本来就允许没有（会程序绘制），不算失败，免得清单里全是噪音。 */
+const ASSET_LOAD_FAILURES = [];
+const OPTIONAL_ASSETS = ['sky.png', 'terrain_pink.png', 'terrain_white.png', 'terrain_red.png'];
+if (typeof window !== 'undefined') window.__assetFailures = ASSET_LOAD_FAILURES;
+
 /* 从一串图里挑第一张已经加载好的（没有就返回 null） */
 function firstReady(list) {
   if (!list) return null;
@@ -92,11 +99,22 @@ function firstReady(list) {
   return null;
 }
 
-/* 建一张图并挂到槽位；onload 后槽位保持这张图，onerror 时回退为 null */
-function loadInto(slot, owner, key, src) {
+/* 建一张图并挂到槽位；onload 后槽位保持这张图，onerror 时回退为 null。
+   失败会重试一次（带时间戳绕开缓存）—— 手机网络抖一下、
+   或者刚部署完 CDN 还没同步时，一次失败不该让这个兵种整局都是色块。 */
+function loadInto(slot, owner, key, src, retried) {
   const img = new Image();
   img.onload  = () => { owner[key] = img; };
-  img.onerror = () => { owner[key] = null; };
+  img.onerror = () => {
+    if (retried) {
+      owner[key] = null;
+      const base = src.split('/').pop().split('?')[0];
+      if (OPTIONAL_ASSETS.indexOf(base) < 0) ASSET_LOAD_FAILURES.push(src);
+      return;
+    }
+    const sep = src.indexOf('?') >= 0 ? '&' : '?';
+    loadInto(slot, owner, key, src + sep + 'r=' + Date.now(), true);
+  };
   img.src = src;
   slot[key] = img;          // 先挂着，绘制函数用 imgReady 判断是否可用
 }

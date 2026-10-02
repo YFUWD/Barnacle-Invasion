@@ -36,18 +36,20 @@ function detectDevice() {
   try { touchPoints = navigator.maxTouchPoints || 0; } catch (e) { touchPoints = 0; }
   try { ua = navigator.userAgent || ''; } catch (e) { ua = ''; }
 
-  // 判断"触摸设备"只用这三条：
-  //   · 主指针是粗的 + 没有 hover（手机/平板的典型特征）
+  // 判断"触摸设备"（决定要不要出现手机专属按钮、说明写键位还是触屏）：
+  //   · 主指针是粗的 + 没有 hover —— 手机/平板的典型特征
   //   · UA 里写着手机系统
-  //   · 触点数 ≥ 2（真实的触摸屏都报 5、10 这种；Chrome 桌面/模拟环境可能虚报 1）
+  //   · 有触点 **并且屏幕很小** —— 触屏笔记本 maxTouchPoints 也能是 10，
+  //     但那是台电脑，该显示键位、不该出现手机开关
   // 故意不用 'ontouchstart' in window —— 桌面 Chrome/Edge 上它永远是 true。
   const coarse = mq('(pointer: coarse)') && mq('(hover: none)');
   const uaMobile = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS|Windows Phone/i.test(ua);
-  MOBILE.touch = coarse || uaMobile || touchPoints >= 2;
+  const vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+  const smallScreen = Math.min(vw, vh) <= 500;
+  MOBILE.touch = coarse || uaMobile || (touchPoints > 1 && smallScreen);
 
   // 只按"触摸 + 短边很小"判定手机，平板和触屏笔记本都走宽屏布局
-  const vw = window.innerWidth || 0, vh = window.innerHeight || 0;
-  MOBILE.phone = MOBILE.touch && Math.min(vw, vh) <= 500;
+  MOBILE.phone = MOBILE.touch && smallScreen;
 }
 
 /* 安全区：css 里用 env() 读进 --sat 等自定义属性，这里再取出来给布局用 */
@@ -202,6 +204,7 @@ function resize() {
 function layoutUI() {
   ui.unitButtons = [];
   ui.forceBtn = null;
+  ui.speedBtn = null;
   ui.askButtons = null;
 
   const safe = viewSafe();
@@ -211,6 +214,14 @@ function layoutUI() {
   layoutMenu(safe);
   layoutOrientToggle(safe);
   if (MOBILE.askOpen) layoutAskPanel(safe);
+}
+
+/* 倍速按钮：手机对局里贴在右上角，位置在「强制横屏」开关左边 */
+function layoutSpeedButton(safe) {
+  if (!MOBILE.touch || !game.started) return;
+  const w = 78, h = 32;
+  const right = ui.forceBtn ? ui.forceBtn.x : W - safe.right - 14;
+  ui.speedBtn = { x: Math.max(safe.left + 8, right - 8 - w), y: safe.top + 10, w, h };
 }
 
 /* 询问框：竖屏居中的一块面板 + 两个按钮（手机上拇指好按） */
@@ -336,6 +347,11 @@ function layoutMenu(safe) {
     // 和以前一样：提示语在 H/2 + 150（也就是 mby + mbh + 50）
     ui.menuHintY = mby + mbh + 50;
   }
+
+  // 操作说明（键位 / 触屏）放在最下面；屏幕太矮（手机横屏那种）就干脆不画
+  const legendTop = (H > W && MOBILE.touch) ? ui.menuHintY + 92 : ui.menuHintY + 40;
+  const legendH = 22 + 3 * (MOBILE.touch ? 38 : 34);
+  ui.legendY = (legendTop + legendH <= H - 8) ? legendTop : 0;
 }
 
 /* 强制横屏开关：菜单/结算里是居中药丸，对局中是右上角小药丸 */
@@ -348,9 +364,16 @@ function layoutOrientToggle(safe) {
     const w = Math.min(W - safe.left - safe.right - 60, 250);
     const h = 46;
     // 竖屏放在提示语下面；横屏屏幕矮，就占提示语那一行的位置（横屏本来也不显示提示语）
-    const y = H > W ? ui.menuHintY + 12 : Math.min(ui.menuHintY - 10, H - h - 16 - safe.bottom);
-    ui.forceBtn = { x: W / 2 - w / 2, y, w, h };
+    let y = H > W ? ui.menuHintY + 12 : Math.min(ui.menuHintY - 10, H - h - 16 - safe.bottom);
+    // 宽屏 + 有操作说明时，把开关挪到说明下面（否则会压在说明的第一行上）；
+    // 实在放不下就贴到右上角去
+    if (H <= W && ui.legendY) {
+      const legendBottom = ui.legendY + 22 + 3 * (MOBILE.touch ? 38 : 34);
+      y = (legendBottom + 20 + h <= H - 8) ? legendBottom + 20 : (safe.top + 10);
+    }
+    ui.forceBtn = { x: W / 2 - w / 2, y: Math.min(y, H - h - 8), w, h };
   }
+  layoutSpeedButton(safe);
 }
 
 
@@ -418,6 +441,7 @@ function drawMenu() {
 
   // 触摸设备：强制横屏开关
   drawOrientToggle();
+  drawKeyLegend();          // 键位 / 触屏操作说明
   drawAskFullscreen();      // 询问框盖在最上层（菜单里也弹）
 
   ctx.textAlign = 'left';
@@ -453,6 +477,111 @@ function drawOrientToggle() {
   ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 1);
   ctx.restore();
 
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+/* 倍速开关（手机对局里，⤢ 横屏左边）：点一下在 2× 和 5× 之间切 */
+function drawSpeedButton() {
+  const b = ui.speedBtn;
+  if (!b || !MOBILE.touch) return;
+  if (b.y + b.h > H) return;
+
+  const fast = gameSpeed >= 4;
+  ctx.save();
+  ctx.fillStyle = fast ? 'rgba(60,40,20,0.92)' : 'rgba(24,32,48,0.92)';
+  roundRect(b.x, b.y, b.w, b.h, b.h / 2);
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = fast ? 'rgba(255,200,90,0.95)' : 'rgba(140,200,255,0.75)';
+  roundRect(b.x, b.y, b.w, b.h, b.h / 2);
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.fillStyle = fast ? '#ffe08a' : '#c6dcff';
+  ctx.fillText('倍速 ' + gameSpeed + '×', b.x + b.w / 2, b.y + b.h / 2 + 1);
+  ctx.restore();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+/* 主菜单下方的操作说明：桌面显示键位，手机显示触屏操作 */
+function legendRows() {
+  if (MOBILE.touch) {
+    return [
+      ['点按', '底部按钮出兵 / 升级基地'],
+      ['拖动', '画面平移视角'],
+      ['右上角', '切倍速 / 全屏横屏'],
+    ];
+  }
+  return [
+    ['Z / X / C', '出兵'],
+    ['Q', '升级基地'],
+    ['W / E / R', '炮塔 后/中/前'],
+    ['F', '技能（Lv.2 解锁）'],
+    ['A / D', '移动视角（也可拖动）'],
+    ['1 / 2 / 3 / 4', '倍速 1× / 2× / 10× / 5×'],
+    ['M', '静音'],
+    ['L', '强制横屏'],
+    ['R / 空格', '结算界面重开'],
+  ];
+}
+
+function drawKeyLegend() {
+  const rows = legendRows();
+  const y0 = ui.legendY;
+  if (!y0) return;
+
+  const cols = W >= 1040 ? 3 : (W >= 700 ? 2 : 1);
+  const rowH = MOBILE.touch ? 38 : 34;
+  const perCol = Math.ceil(rows.length / cols);
+  const cellW = Math.min(320, (W - 40) / cols);
+  const totalW = cellW * cols;
+  const x0 = W / 2 - totalW / 2;
+
+  ctx.save();
+  ctx.textBaseline = 'middle';
+
+  // 标题
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 15px system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(150,175,205,0.75)';
+  ctx.fillText(MOBILE.touch ? '触屏操作' : '键位', W / 2, y0 - 22);
+
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  for (let i = 0; i < rows.length; i++) {
+    const col = Math.floor(i / perCol);
+    const row = i % perCol;
+    const cx = x0 + col * cellW;
+    const cy = y0 + row * rowH;
+    const [key, label] = rows[i];
+
+    // 键位小方块
+    const kw = Math.max(30, ctx.measureText(key).width + 14);
+    ctx.fillStyle = 'rgba(30,42,66,0.92)';
+    roundRect(cx, cy - 11, kw, 22, 5);
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(140,190,255,0.6)';
+    roundRect(cx, cy - 11, kw, 22, 5);
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#dce8f8';
+    ctx.fillText(key, cx + kw / 2, cy + 1);
+
+    // 说明文字
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(190,205,225,0.9)';
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.fillText(label, cx + kw + 10, cy + 1);
+    ctx.font = 'bold 13px system-ui, sans-serif';
+  }
+
+  ctx.restore();
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 }
@@ -614,7 +743,11 @@ function drawUI() {
   const safe = viewSafe();
   // 手机上右上角被「强制横屏」开关占着，右侧那两行就挪到左上角 HUD 下面（不抢宽度）
   const pillBelow = MOBILE.phone && game.started && ui.forceBtn;
-  const pillW = (!pillBelow && game.started && ui.forceBtn) ? ui.forceBtn.w + 12 : 0;
+  let pillW = 0;
+  if (!pillBelow && game.started) {
+    if (ui.forceBtn) pillW += ui.forceBtn.w + 12;
+    if (ui.speedBtn) pillW += ui.speedBtn.w + 8;
+  }
   const hudR = W - safe.right - 22 - pillW;
 
   // Token（图标是鲸元券）
@@ -1225,7 +1358,8 @@ function drawUI() {
     ctx.textBaseline = 'alphabetic';
   }
 
-  // 触摸设备：右上角「强制横屏」开关画在最上层（对局、结算界面都点得到）
+  // 触摸设备：右上角「倍速」+「强制横屏」两个开关，画在最上层（对局、结算界面都点得到）
+  drawSpeedButton();
   drawOrientToggle();
   // 询问框：一旦打开就盖在所有东西上面
   drawAskFullscreen();
@@ -1275,7 +1409,7 @@ function restart() {
   camX = 0;
   keys.a = false;
   keys.d = false;
-  gameSpeed = 1;
+  gameSpeed = 2;      // 默认 2 倍速（和 04_state.js 的初值保持一致）
 
   layoutUI();
 }

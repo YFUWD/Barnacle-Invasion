@@ -87,6 +87,13 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
 
+  // 「倍速」开关（手机，在横屏开关左边）：2× ⇄ 5×
+  if (ui.speedBtn && MOBILE.touch && hitTest(p.x, p.y, ui.speedBtn)) {
+    SFX.click();
+    gameSpeed = (gameSpeed >= 4) ? 2 : 5;
+    return;
+  }
+
   // 「强制横屏」开关（触摸设备才有，菜单 / 对局 / 结算界面都点得到）
   if (ui.forceBtn && MOBILE.touch && hitTest(p.x, p.y, ui.forceBtn)) {
     SFX.click();
@@ -189,10 +196,11 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // 速度切换：1 = 1 倍速，2 = 2 倍速，3 = 10 倍速
+  // 速度切换：1 = 1 倍速，2 = 2 倍速（默认），3 = 10 倍速，4 = 5 倍速
   if (e.key === '1') { gameSpeed = 1;  return; }
   if (e.key === '2') { gameSpeed = 2;  return; }
   if (e.key === '3') { gameSpeed = 10; return; }
+  if (e.key === '4') { gameSpeed = 5;  return; }
 
   // 技能：F
   if (e.key === 'f' || e.key === 'F') { tryActivateSkill(); return; }
