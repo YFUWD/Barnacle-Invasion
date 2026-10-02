@@ -1,0 +1,27 @@
+/* =========================================================
+   藤壶的入侵 · 页面样式
+   ---------------------------------------------------------
+   画布铺满整个视口（游戏内部自己按 devicePixelRatio 缩放），
+   所以这里只负责底色、字体和不选中。
+   ========================================================= */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0a0a12;
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+  background: #0a0a12;
+}

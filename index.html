@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="description" content="藤壶的入侵 —— 纯前端横版推塔小游戏：造兵、升级基地、推平藤壶母巢">
+<meta name="theme-color" content="#0a0a12">
+<title>藤壶的入侵</title>
+<!-- 图标内嵌成 data URI，不依赖外部文件，file:// 和 GitHub Pages 都不会 404 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0a12'/%3E%3Cpath d='M11 8 H21 L27 26 H5 Z' fill='%23a8c8e0'/%3E%3Cellipse cx='16' cy='8' rx='5' ry='2.6' fill='%230a0a12'/%3E%3Cellipse cx='16' cy='8' rx='2.4' ry='1.2' fill='%234a90d9'/%3E%3C/svg%3E">
+<!-- 分享链接时的预览信息（图片用线上地址，本地打开时无效属正常） -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="藤壶的入侵">
+<meta property="og:description" content="纯前端横版推塔小游戏：造兵、升基地、建炮塔，推平藤壶母巢。点开即玩，不用安装。">
+<meta property="og:image" content="https://yfuwd.github.io/barnacle-invasion/preview.png">
+<link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!--
+  拆分说明：原来是一个 index.html 里塞了全部代码，现在按模块拆到 js/ 下。
+  所有文件都是普通 <script>（不是 ES module），按顺序加载、共享全局作用域，
+  这样直接用 file:// 双击打开也能跑，不需要起服务器。
+  模块编号 = 加载顺序，改动请保持依赖在前。
+-->
+<script src="js/00_audio.js?v=1"></script>
+<script src="js/01_config.js?v=1"></script>
+<script src="js/02_utils.js?v=1"></script>
+<script src="js/03_assets.js?v=1"></script>
+<script src="js/04_state.js?v=1"></script>
+<script src="js/05_units.js?v=1"></script>
+<script src="js/06_base.js?v=1"></script>
+<script src="js/07_spawn.js?v=1"></script>
+<script src="js/08_combat.js?v=1"></script>
+<script src="js/09_ai.js?v=1"></script>
+<script src="js/10_camera.js?v=1"></script>
+<script src="js/11_update.js?v=1"></script>
+<script src="js/12_render_sky.js?v=1"></script>
+<script src="js/13_render_terrain.js?v=1"></script>
+<script src="js/14_render_base.js?v=1"></script>
+<script src="js/15_render_unit.js?v=1"></script>
+<script src="js/16_render_fx.js?v=1"></script>
+<script src="js/17_ui.js?v=1"></script>
+<script src="js/18_input.js?v=1"></script>
+<script src="js/19_main.js?v=1"></script>
+</body>
+</html>
