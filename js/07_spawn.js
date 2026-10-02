@@ -15,12 +15,19 @@ function createUnitAt(typeId, team, x) {
 
   // 难度缩放：
   //   敌方 —— 简单 0.8×，其中 Lv.4 / Lv.5 的敌人再压到 0.7×；普通 1.0×；困难 1.1×
+  //           普通难度 Lv.5 的骑兵再单独削一档（钱多又肉又痛，见 CONFIG.normalLv5CavalryNerf）
   //   我方 —— 简单模式下 Lv.5 补 1.2×，免得后期打不动
   let hpScale = 1, dmgScale = 1;
   if (team === 'enemy') {
     hpScale = dmgScale = (game.difficulty === 'easy' && eraIdx >= 3)
       ? 0.7
       : (CONFIG.difficultyScale[game.difficulty] || 1);
+
+    if (game.difficulty === 'normal' && eraIdx === 4 && def.isCavalry) {
+      const nerf = CONFIG.normalLv5CavalryNerf;
+      hpScale  *= nerf.hp;
+      dmgScale *= nerf.dmg;
+    }
   } else if (game.difficulty === 'easy' && eraIdx >= 4) {
     hpScale = dmgScale = CONFIG.easyPlayerLv5Buff;
   }

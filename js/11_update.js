@@ -121,7 +121,10 @@ function update(dt) {
     game.goldTick -= CONFIG.goldTickInterval;
 
     const playerPerTick = CONFIG.goldPerTick + game.playerEra * 500;
-    const enemyWealthMult = [0.9, 1.0, 1.1, 1.2, 1.2][game.enemyEra] || 0.9;
+    // 敌方财富倍率按"难度 → 等级"查表（普通难度 Lv.5 削过，见 01_config.js）
+    const wealthRow = CONFIG.enemyWealthByDifficulty[game.difficulty]
+                   || CONFIG.enemyWealthByDifficulty.normal;
+    const enemyWealthMult = wealthRow[game.enemyEra] || 0.9;
     const enemyPerTick  = (CONFIG.goldPerTick + game.enemyEra * 500) * enemyWealthMult;
 
     game.gold += playerPerTick;
