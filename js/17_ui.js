@@ -442,6 +442,7 @@ function drawMenu() {
   // 触摸设备：强制横屏开关
   drawOrientToggle();
   drawKeyLegend();          // 键位 / 触屏操作说明
+  drawVisitCounter(safe);   // 左下角访问统计（拿不到数字就不画）
   drawAskFullscreen();      // 询问框盖在最上层（菜单里也弹）
 
   ctx.textAlign = 'left';
@@ -584,6 +585,62 @@ function drawKeyLegend() {
   ctx.restore();
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
+}
+
+/* ---------------- 访问统计 ---------------- */
+/* 用 abacus（CountAPI 的接班项目，免费、免注册、带 CORS）数"多少人打开过"：
+     · 同一个标签页会话只 +1 一次（sessionStorage），刷新不灌水
+     · 拿不到数字（服务挂了 / 断网 / 被墙 / 无头测试）就整行不显示，绝不影响游戏
+   备注：原本想用「不蒜子」，但它后端实测一直 502 / 超时（脚本能下、接口不返回），
+   所以换了这家；要换回去只要改下面的 VISIT_API 三行。 */
+const VISIT_API = 'https://abacus.jasoncameron.dev';
+const VISIT_NS  = 'yfuwd-barnacle';
+const VISIT_KEY = 'invasion';
+const visitHud = { total: 0, started: false };
+
+function startVisitCounter() {
+  if (visitHud.started) return;
+  visitHud.started = true;
+  if (typeof fetch !== 'function') return;        // 无头/老环境直接跳过
+
+  let counted = false;
+  try { counted = sessionStorage.getItem('barnacle.counted') === '1'; } catch (e) { counted = false; }
+  const url = VISIT_API + '/' + (counted ? 'get' : 'hit') + '/' + VISIT_NS + '/' + VISIT_KEY;
+
+  fetch(url, { cache: 'no-store' })
+    .then((r) => (r && r.ok ? r.json() : null))
+    .then((j) => {
+      const n = (j && typeof j.value === 'number') ? j.value : 0;
+      if (n > 0) {
+        visitHud.total = n;
+        try { sessionStorage.setItem('barnacle.counted', '1'); } catch (e) { /* 隐私模式无所谓 */ }
+      }
+    })
+    .catch(() => { /* 静默：数不到就不显示 */ });
+}
+
+function visitCounterText() {
+  return visitHud.total > 0 ? ('累计访问 ' + visitHud.total) : '';
+}
+
+/* 画在主菜单左下角 */
+function drawVisitCounter(safe) {
+  if (game.started) return;
+  const text = visitCounterText();
+  if (!text) return;
+
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = '13px system-ui, sans-serif';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  const x = safe.left + 18;
+  const y = H - safe.bottom - 16;
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = 'rgba(165,190,220,0.85)';
+  ctx.fillText(text, x, y);
+  ctx.restore();
 }
 
 /* 「要不要全屏横屏」询问框（手机竖屏第一次打开时弹，点完记住答案） */
@@ -1417,6 +1474,7 @@ function restart() {
 /* ---------------- 启动：设备判定 + 监听屏幕变化 ---------------- */
 detectDevice();
 initForceLandscape();
+startVisitCounter();     // 访问统计（异步，失败就静默）
 
 // 手机旋转、地址栏收起、进/出全屏都要重算布局（同一帧里的多次触发合并成一次）
 let resizePending = false;
