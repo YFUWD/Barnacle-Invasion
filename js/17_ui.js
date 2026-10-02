@@ -295,7 +295,7 @@ function layoutPhonePortrait(safe) {
   const gap = 10;
 
   // 第一排（最下）：出兵，三个等宽按钮 —— 最常用的放最好按的位置
-  const bh = Math.round(clamp(H * 0.135, 74, 124));
+  const bh = Math.round(clamp(H * 0.125, 70, 118));
   const unitY = H - safe.bottom - 12 - bh;
   const bw = (innerW - gap * 2) / 3;
   const ids = ERAS[game.playerEra].units;
@@ -304,7 +304,7 @@ function layoutPhonePortrait(safe) {
   });
 
   // 第二排：炮塔 ×3（后 / 中 / 前，和宽屏同一顺序）
-  const th = Math.round(clamp(H * 0.095, 54, 88));
+  const th = Math.round(clamp(H * 0.09, 52, 84));
   const row2Y = unitY - gap - th;
   const tw = (innerW - gap * 2) / 3;
   ui.turretSlots = [

@@ -7,13 +7,16 @@
    否则 390px 宽的屏幕只看得到 390 世界像素，等于没法玩。
    ========================================================= */
 
-/* 视口窄的时候把世界整体缩小，保证至少看得见这么多世界像素宽。
-   只影响世界（天空/地形/基地/单位/特效），UI 始终是原尺寸。
-   1 = 不缩放；手机竖屏 W=390 时约 0.54。 */
-const WORLD_MIN_VIEW = 720;
+/* 手机竖屏时把世界缩小，保证至少看得见这么多世界像素宽。
+   数值越小 = 画面越大（基地/立绘越大）。480 是手机上"基地够大、
+   又不至于只能看到两个兵"的折中值。
+   只有手机布局会缩 —— 电脑和平板（MOBILE.phone = false）返回 1，
+   一点都不会变。 */
+const WORLD_MIN_VIEW = 480;
 function worldZoom() {
   if (!(W > 0)) return 1;
-  return clamp(W / WORLD_MIN_VIEW, 0.45, 1);
+  if (!MOBILE.phone) return 1;          // 电脑端：不缩放，保持原样
+  return clamp(W / WORLD_MIN_VIEW, 0.55, 1);
 }
 
 function maxCameraX() {

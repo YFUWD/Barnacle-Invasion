@@ -115,6 +115,9 @@ function drawBase(b) {
   }
 
   // ---- 版本/形象牌 ----
+  // 手机上世界被缩小了（见 worldZoom），牌子和血条跟着缩小会看不清，
+  // 这里把字号补回来一点；桌面用原来的字号，一个像素都不变。
+  const labelBoost = (typeof MOBILE !== 'undefined' && MOBILE.phone) ? 1.2 : 1;
   const level = era + 1;
   const nameList = isPlayer ? PLAYER_BASE_NAMES : ENEMY_BASE_NAMES;
   const lvY = artTop - 72;
@@ -123,12 +126,12 @@ function drawBase(b) {
   ctx.textBaseline = 'middle';
 
   const lvText = nameList[level - 1] || `Lv.${level}`;
-  ctx.font = 'bold 22px system-ui, sans-serif';
+  ctx.font = `bold ${Math.round(22 * labelBoost)}px system-ui, sans-serif`;
   const textW = ctx.measureText(lvText).width;
   const padX = 16;
   const padY = 7;
   const tagW = textW + padX * 2;
-  const tagH = 34 + padY;
+  const tagH = 34 * labelBoost + padY;
   const tagX = sx - tagW / 2;
   const tagY = lvY - tagH / 2;
 
@@ -160,7 +163,7 @@ function drawBase(b) {
   ctx.fill();
 
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.font = `bold ${Math.round(13 * labelBoost)}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`${Math.ceil(b.hp)} / ${b.maxHp}`, sx, barY + 7);
