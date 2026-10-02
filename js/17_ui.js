@@ -1,32 +1,170 @@
 /* =========================================================
    17 UI：尺寸 / 布局 / 面板 / 按钮 / 重开
+   ---------------------------------------------------------
+   同一个链接同时服务 PC 和手机（打开时自动判断）：
+
+     · PC / 平板：布局跟着窗口大小走（和以前一样）
+     · 手机竖屏：底部按钮排成三排、字号收紧、拖动画面平移视角
+     · 手机横屏：还是原来那一排，只是整体缩放
+
+   手机还能开关「强制横屏」：
+     优先用原生屏幕旋转（Android Chrome，需要先进全屏），
+     不支持时（iOS Safari / 桌面浏览器）退回"画面在画布内转 90°"，
+     所以两种情况看起来都是横的。
    ========================================================= */
+
+/* ---------------- 设备 / 朝向状态 ---------------- */
+const MOBILE = {
+  touch: false,           // 有触摸能力：显示角落的横屏开关、提示语改成"拖动"
+  phone: false,           // 触摸 + 小屏 → 用手机布局
+  forceLandscape: false,  // 玩家开关：强制横屏
+  rotated: false,         // 正在用"画布内旋转 90°"兜底
+  nativeLock: false,      // 原生旋转锁定是否成功
+  sw: 0, sh: 0,           // 画布 CSS 尺寸（设备物理朝向）
+  safe: { top: 0, right: 0, bottom: 0, left: 0 },   // 物理朝向的安全区（刘海/小白条）
+  panning: false,         // 正在拖动画面
+};
+
+const FORCE_LS_KEY = 'barnacle.forceLandscape';
+
+function detectDevice() {
+  const mq = (q) => (typeof window.matchMedia === 'function' ? window.matchMedia(q).matches : false);
+  let touchPoints = 0, ua = '';
+  try { touchPoints = navigator.maxTouchPoints || 0; } catch (e) { touchPoints = 0; }
+  try { ua = navigator.userAgent || ''; } catch (e) { ua = ''; }
+
+  // 判断"触摸设备"只用这三条：
+  //   · 主指针是粗的 + 没有 hover（手机/平板的典型特征）
+  //   · UA 里写着手机系统
+  //   · 触点数 ≥ 2（真实的触摸屏都报 5、10 这种；Chrome 桌面/模拟环境可能虚报 1）
+  // 故意不用 'ontouchstart' in window —— 桌面 Chrome/Edge 上它永远是 true。
+  const coarse = mq('(pointer: coarse)') && mq('(hover: none)');
+  const uaMobile = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS|Windows Phone/i.test(ua);
+  MOBILE.touch = coarse || uaMobile || touchPoints >= 2;
+
+  // 只按"触摸 + 短边很小"判定手机，平板和触屏笔记本都走宽屏布局
+  const vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+  MOBILE.phone = MOBILE.touch && Math.min(vw, vh) <= 500;
+}
+
+/* 安全区：css 里用 env() 读进 --sat 等自定义属性，这里再取出来给布局用 */
+function readSafeArea() {
+  let cs = null;
+  try { cs = getComputedStyle(document.documentElement); } catch (e) { return; }
+  if (!cs || !cs.getPropertyValue) return;
+  const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+  MOBILE.safe = {
+    top:    num(cs.getPropertyValue('--sat')),
+    right:  num(cs.getPropertyValue('--sar')),
+    bottom: num(cs.getPropertyValue('--sab')),
+    left:   num(cs.getPropertyValue('--sal')),
+  };
+}
+
+/* 安全区换算到"游戏视口"坐标系（画面转了 90° 时四个边要跟着换） */
+function viewSafe() {
+  const s = MOBILE.safe;
+  if (!MOBILE.rotated) return { top: s.top, right: s.right, bottom: s.bottom, left: s.left };
+  // 画面顺时针转 90°：物理上边→视口左边，物理右边→视口上边，依此类推
+  return { top: s.right, right: s.bottom, bottom: s.left, left: s.top };
+}
+
+/* 屏幕坐标 → 游戏视口坐标（转了 90° 时要把 x/y 换过来） */
+function screenToView(sx, sy) {
+  if (MOBILE.rotated) return { x: sy, y: MOBILE.sw - sx };
+  return { x: sx, y: sy };
+}
+
+/* 视口窄（手机竖屏）时"世界"会被整体缩小，这个比例由 10_camera.js 的
+   worldZoom() 提供：布局（UI 热区）本身不缩放，所以这里用不到它。 */
+
+/* ---------------- 强制横屏 ---------------- */
+function initForceLandscape() {
+  let saved = null;
+  try { saved = localStorage.getItem(FORCE_LS_KEY); } catch (e) { saved = null; }
+  MOBILE.forceLandscape = saved === '1';
+}
+
+function saveForceLandscape() {
+  try { localStorage.setItem(FORCE_LS_KEY, MOBILE.forceLandscape ? '1' : '0'); } catch (e) { /* 隐私模式无所谓 */ }
+}
+
+async function setForceLandscape(on) {
+  MOBILE.forceLandscape = !!on;
+  saveForceLandscape();
+
+  if (MOBILE.forceLandscape) {
+    // 原生横屏：Android Chrome 支持，而且必须先进全屏（这个调用来自用户手势）
+    try {
+      const el = document.documentElement;
+      if (el.requestFullscreen && !document.fullscreenElement) {
+        await el.requestFullscreen({ navigationUI: 'hide' });
+      }
+      if (screen.orientation && screen.orientation.lock) {
+        await screen.orientation.lock('landscape');
+        MOBILE.nativeLock = true;
+      }
+    } catch (e) {
+      MOBILE.nativeLock = false;   // iOS Safari 等：退回画面旋转
+    }
+  } else {
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) { /* ignore */ }
+    try { if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen(); } catch (e) { /* ignore */ }
+    MOBILE.nativeLock = false;
+  }
+  resize();
+}
+
+function toggleForceLandscape() { return setForceLandscape(!MOBILE.forceLandscape); }
 
 /* ---------------- 尺寸 ---------------- */
 function resize() {
+  detectDevice();
   dpr = window.devicePixelRatio || 1;
-  W = canvas.clientWidth;
-  H = canvas.clientHeight;
+  MOBILE.sw = canvas.clientWidth || window.innerWidth || 1;
+  MOBILE.sh = canvas.clientHeight || window.innerHeight || 1;
 
-  canvas.width = Math.round(W * dpr);
-  canvas.height = Math.round(H * dpr);
+  // 强制横屏 + 当前是竖屏 → 画面在画布内转 90°（原生旋转成功的机器不会走到这里）
+  MOBILE.rotated = MOBILE.forceLandscape && MOBILE.sh > MOBILE.sw;
+
+  W = MOBILE.rotated ? MOBILE.sh : MOBILE.sw;
+  H = MOBILE.rotated ? MOBILE.sw : MOBILE.sh;
+
+  canvas.width = Math.round(MOBILE.sw * dpr);
+  canvas.height = Math.round(MOBILE.sh * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (MOBILE.rotated) {
+    // 转完 (0,0)-(W,H) 正好铺满整块画布
+    ctx.translate(MOBILE.sw, 0);
+    ctx.rotate(Math.PI / 2);
+  }
 
   groundY = Math.round(H * 0.74);
+  readSafeArea();
   layoutUI();
 }
 
 /* ---------------- 按钮热区 ---------------- */
-/* 底部一排的整体缩放：屏幕窄的时候一起缩小，避免几组按钮互相压住。
-   基准尺寸是 1440 宽下"看得清"的尺寸（出兵按钮 112 高，骑兵那个更宽）。 */
 function layoutUI() {
   ui.unitButtons = [];
+  ui.forceBtn = null;
 
+  const safe = viewSafe();
+  if (MOBILE.phone && H > W) layoutPhonePortrait(safe);
+  else                       layoutWide(safe);
+
+  layoutMenu(safe);
+  layoutOrientToggle(safe);
+}
+
+/* 宽屏（PC / 平板 / 手机横屏）：底部一整排，整体缩放去适配宽度 */
+function layoutWide(safe) {
   const LEFT_W = 4 * 96 + 3 * 12;      // 炮塔×3 + 技能
   const RIGHT_W = 162;                  // 升级基地
   const MID_W = 108 + 12 + 108 + 12 + 176;   // 近战 + 远程 + 骑兵（骑兵更宽）
   const want = 20 + LEFT_W + 24 + MID_W + 24 + RIGHT_W + 20;
-  const s = clamp((W - 20) / want, 0.55, 1.25);
+  // 手机横屏这种很窄的情况允许缩得更狠一点，保证一排塞得下
+  const s = clamp((W - safe.left - safe.right - 20) / want, 0.45, 1.25);
 
   const tSize = Math.round(96 * s);
   const tGap = Math.round(12 * s);
@@ -34,11 +172,11 @@ function layoutUI() {
   const gap = Math.round(12 * s);
   const bw = Math.round(108 * s);      // 近战 / 远程
   const cw = Math.round(176 * s);      // 骑兵（横向 4 身位，按钮跟着拉长）
-  const y = H - bh - 16;
+  const y = H - bh - 16 - safe.bottom;
 
   // 左边一组：炮塔 W/E/R + 技能
-  const tX = 20;
-  const tY = H - tSize - 16;
+  const tX = safe.left + 20;
+  const tY = H - tSize - 16 - safe.bottom;
   ui.turretSlots = [
     { slot: 2, x: tX,                      y: tY, w: tSize, h: tSize },  // W 后
     { slot: 1, x: tX + (tSize + tGap),     y: tY, w: tSize, h: tSize },  // E 中
@@ -48,7 +186,7 @@ function layoutUI() {
 
   // 右边：升级基地
   const ubW = Math.round(RIGHT_W * s);
-  ui.upgradeButton = { x: W - 20 - ubW, y, w: ubW, h: bh };
+  ui.upgradeButton = { x: W - safe.right - 20 - ubW, y, w: ubW, h: bh };
   ui.restartButton = { x: W / 2 - 90, y: H / 2 + 80, w: 180, h: 52 };
 
   // 中间：放在"左边一组"和"升级基地"之间的空档里居中
@@ -65,21 +203,90 @@ function layoutUI() {
     ui.unitButtons.push({ id, x, y, w, h: bh });
     x += w + gap;
   }
-
-  // 开始菜单难度按钮
-  const mbw = 170, mbh = 70, mgap = 24;
-  const totalMW = mbw * 3 + mgap * 2;
-  const startMX = W / 2 - totalMW / 2;
-  const mby = H / 2 + 30;
-  ui.menuButtons = [
-    { diff: 'easy',   label: '简单', x: startMX,                    y: mby, w: mbw, h: mbh },
-    { diff: 'normal', label: '普通', x: startMX + mbw + mgap,       y: mby, w: mbw, h: mbh },
-    { diff: 'hard',   label: '困难', x: startMX + (mbw + mgap) * 2, y: mby, w: mbw, h: mbh },
-  ];
 }
+
+/* 手机竖屏：底部改成三排（出兵 / 炮塔 / 技能+升级），热区都按手指来放大 */
+function layoutPhonePortrait(safe) {
+  const pad = safe.left + 10;                    // 左边距（含刘海）
+  const innerW = Math.max(240, W - safe.left - safe.right - 20);
+  const gap = 10;
+
+  // 第一排（最下）：出兵，三个等宽按钮 —— 最常用的放最好按的位置
+  const bh = Math.round(clamp(H * 0.135, 74, 124));
+  const unitY = H - safe.bottom - 12 - bh;
+  const bw = (innerW - gap * 2) / 3;
+  const ids = ERAS[game.playerEra].units;
+  ids.forEach((id, i) => {
+    ui.unitButtons.push({ id, x: pad + i * (bw + gap), y: unitY, w: bw, h: bh });
+  });
+
+  // 第二排：炮塔 ×3（后 / 中 / 前，和宽屏同一顺序）
+  const th = Math.round(clamp(H * 0.095, 54, 88));
+  const row2Y = unitY - gap - th;
+  const tw = (innerW - gap * 2) / 3;
+  ui.turretSlots = [
+    { slot: 2, x: pad,                     y: row2Y, w: tw, h: th },   // W 后
+    { slot: 1, x: pad + tw + gap,          y: row2Y, w: tw, h: th },   // E 中
+    { slot: 0, x: pad + (tw + gap) * 2,    y: row2Y, w: tw, h: th },   // R 前
+  ];
+
+  // 第三排：技能 + 升级基地
+  const row3Y = row2Y - gap - th;
+  const halfW = (innerW - gap) / 2;
+  ui.skillButton =  { x: pad,                 y: row3Y, w: halfW, h: th };
+  ui.upgradeButton = { x: pad + halfW + gap,  y: row3Y, w: halfW, h: th };
+
+  ui.restartButton = { x: W / 2 - 90, y: H / 2 + 80, w: 180, h: 52 };
+}
+
+/* 难度菜单：竖屏竖着排，宽屏横着排（和以前一样） */
+function layoutMenu(safe) {
+  const ids = ['easy', 'normal', 'hard'];
+  const labels = { easy: '简单', normal: '普通', hard: '困难' };
+
+  if (H > W) {
+    const bw = Math.min(W - safe.left - safe.right - 60, 300);
+    const bh = 64, bgap = 16;
+    const top = H * 0.38;
+    const x = W / 2 - bw / 2;
+    ui.menuButtons = ids.map((diff, i) => ({
+      diff, label: labels[diff], x, y: top + i * (bh + bgap), w: bw, h: bh,
+    }));
+    ui.menuHintY = top + 3 * (bh + bgap) + 14;
+  } else {
+    const mbw = 170, mbh = 70, mgap = 24;
+    const totalMW = mbw * 3 + mgap * 2;
+    const startMX = W / 2 - totalMW / 2;
+    const mby = H / 2 + 30;
+    ui.menuButtons = ids.map((diff, i) => ({
+      diff, label: labels[diff], x: startMX + i * (mbw + mgap), y: mby, w: mbw, h: mbh,
+    }));
+    // 和以前一样：提示语在 H/2 + 150（也就是 mby + mbh + 50）
+    ui.menuHintY = mby + mbh + 50;
+  }
+}
+
+/* 强制横屏开关：菜单/结算里是居中药丸，对局中是右上角小药丸 */
+function layoutOrientToggle(safe) {
+  if (!MOBILE.touch) return;
+  if (game.started) {
+    const w = 98, h = 32;
+    ui.forceBtn = { x: W - safe.right - 14 - w, y: safe.top + 10, w, h };
+  } else {
+    const w = Math.min(W - safe.left - safe.right - 60, 250);
+    const h = 46;
+    // 竖屏放在提示语下面；横屏屏幕矮，就占提示语那一行的位置（横屏本来也不显示提示语）
+    const y = H > W ? ui.menuHintY + 12 : Math.min(ui.menuHintY - 10, H - h - 16 - safe.bottom);
+    ui.forceBtn = { x: W / 2 - w / 2, y, w, h };
+  }
+}
+
 
 /* ---------------- 开始菜单 ---------------- */
 function drawMenu() {
+  const safe = viewSafe();
+  const narrow = H > W;
+
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, '#0e1a33');
   g.addColorStop(1, '#1d2f55');
@@ -88,19 +295,25 @@ function drawMenu() {
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = 'bold 64px system-ui, sans-serif';
-  ctx.lineWidth = 8;
+
+  // 标题：窄屏按宽度缩字号，别顶出屏幕
+  const titlePx = Math.round(clamp((W - safe.left - safe.right - 40) / 5.4, 32, 64));
+  const titleY = narrow ? Math.max(H * 0.20, safe.top + titlePx) : H / 2 - 130;
+  const subY   = narrow ? titleY + Math.round(titlePx * 1.2) : H / 2 - 40;
+
+  ctx.font = `bold ${titlePx}px system-ui, sans-serif`;
+  ctx.lineWidth = Math.max(4, titlePx * 0.12);
   ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-  ctx.strokeText('藤壶的入侵', W / 2, H / 2 - 130);
+  ctx.strokeText('藤壶的入侵', W / 2, titleY);
   ctx.fillStyle = '#ffd94a';
-  ctx.fillText('藤壶的入侵', W / 2, H / 2 - 130);
+  ctx.fillText('藤壶的入侵', W / 2, titleY);
 
   ctx.font = 'bold 22px system-ui, sans-serif';
   ctx.lineWidth = 5;
   ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.strokeText('选择难度', W / 2, H / 2 - 40);
+  ctx.strokeText('选择难度', W / 2, subY);
   ctx.fillStyle = '#c6dcff';
-  ctx.fillText('选择难度', W / 2, H / 2 - 40);
+  ctx.fillText('选择难度', W / 2, subY);
 
   for (const b of ui.menuButtons) {
     let accent = '#6eb4ff';
@@ -116,14 +329,56 @@ function drawMenu() {
     roundRect(b.x, b.y, b.w, b.h, 12);
     ctx.stroke();
 
-    ctx.font = 'bold 24px system-ui, sans-serif';
+    ctx.font = `bold ${Math.round(clamp(b.h * 0.34, 16, 24))}px system-ui, sans-serif`;
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 8);
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + Math.round(b.h * 0.07));
   }
 
-  ctx.font = 'bold 13px system-ui, sans-serif';
-  ctx.fillStyle = '#8898b0';
-  ctx.fillText('点击难度开始（或按 1 / 2 / 3）', W / 2, H / 2 + 150);
+  // 提示语：触摸设备不用讲键盘快捷键（开关自己带说明）
+  if (!MOBILE.touch || narrow) {
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillStyle = '#8898b0';
+    const hint = MOBILE.touch
+      ? '点难度开始（打开下方开关可以横过来玩）'
+      : '点击难度开始（或按 1 / 2 / 3）';
+    ctx.fillText(hint, W / 2, ui.menuHintY);
+  }
+
+  // 触摸设备：强制横屏开关
+  drawOrientToggle();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+/* 强制横屏开关（只在触摸设备上出现；菜单里是居中药丸，对局里是右上角小药丸） */
+function drawOrientToggle() {
+  const b = ui.forceBtn;
+  if (!b || !MOBILE.touch) return;
+  if (b.y + b.h > H) return;      // 屏幕太矮就不画，别压住别的按钮
+
+  const on = MOBILE.forceLandscape;
+  const inGame = game.started;
+
+  ctx.save();
+  ctx.fillStyle = on ? 'rgba(30,60,40,0.92)' : 'rgba(24,32,48,0.92)';
+  roundRect(b.x, b.y, b.w, b.h, b.h / 2);
+  ctx.fill();
+
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = on ? 'rgba(120,230,150,0.95)' : 'rgba(140,200,255,0.75)';
+  roundRect(b.x, b.y, b.w, b.h, b.h / 2);
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold ${inGame ? 13 : 16}px system-ui, sans-serif`;
+  ctx.fillStyle = on ? '#c0ffc8' : '#c6dcff';
+  const label = inGame
+    ? (on ? '⤡ 横屏开' : '⤢ 横屏关')
+    : (on ? '强制横屏：开' : '强制横屏：关');
+  ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 1);
+  ctx.restore();
 
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
@@ -214,67 +469,87 @@ function drawUI() {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 
+  // 手机上整块 HUD 收紧（字号 ×hs），并把右上角让给「强制横屏」开关
+  const hs = MOBILE.phone ? clamp(Math.min(W, H) / 620, 0.62, 1) : 1;
+  const safe = viewSafe();
+  // 手机上右上角被「强制横屏」开关占着，右侧那两行就挪到左上角 HUD 下面（不抢宽度）
+  const pillBelow = MOBILE.phone && game.started && ui.forceBtn;
+  const pillW = (!pillBelow && game.started && ui.forceBtn) ? ui.forceBtn.w + 12 : 0;
+  const hudR = W - safe.right - 22 - pillW;
+
   // Token（图标是鲸元券）
-  ctx.font = 'bold 32px system-ui, sans-serif';
-  ctx.lineWidth = 6;
+  const goldPx = Math.round(32 * hs);
+  const goldY = Math.round(safe.top + 14 + goldPx);
+  ctx.font = `bold ${goldPx}px system-ui, sans-serif`;
+  ctx.lineWidth = Math.max(3, Math.round(goldPx * 0.19));
   ctx.strokeStyle = 'rgba(0,0,0,0.65)';
   const goldText = formatGold(game.gold);
   const tokenIcon = ASSETS.tokenIcon;
   if (imgReady(tokenIcon)) {
-    const d = fitSprite(tokenIcon, 62, 36);
-    ctx.drawImage(tokenIcon, 22, 46 - d.h * 0.78, d.w, d.h);
-    ctx.strokeText(goldText, 22 + d.w + 9, 46);
+    const d = fitSprite(tokenIcon, Math.round(62 * hs), Math.round(36 * hs));
+    ctx.drawImage(tokenIcon, 22, goldY - d.h * 0.78, d.w, d.h);
+    ctx.strokeText(goldText, 22 + d.w + 9, goldY);
     ctx.fillStyle = '#ffd94a';
-    ctx.fillText(goldText, 22 + d.w + 9, 46);
+    ctx.fillText(goldText, 22 + d.w + 9, goldY);
   } else {
     const goldLabel = `🪙 ${goldText}`;
-    ctx.strokeText(goldLabel, 22, 46);
+    ctx.strokeText(goldLabel, 22, goldY);
     ctx.fillStyle = '#ffd94a';
-    ctx.fillText(goldLabel, 22, 46);
+    ctx.fillText(goldLabel, 22, goldY);
   }
 
   // 我方版本
-  ctx.font = 'bold 24px system-ui, sans-serif';
+  const eraPx = Math.round(24 * hs);
+  const eraY = goldY + Math.round(34 * hs);
+  ctx.font = `bold ${eraPx}px system-ui, sans-serif`;
   const eraText = `我方版本：${PLAYER_BASE_NAMES[game.playerEra] || 'DeepSeek-V2'}`;
-  ctx.lineWidth = 5;
+  ctx.lineWidth = Math.max(3, Math.round(eraPx * 0.2));
   ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.strokeText(eraText, 22, 80);
+  ctx.strokeText(eraText, 22, eraY);
   ctx.fillStyle = '#ffffff';
-  ctx.fillText(eraText, 22, 80);
+  ctx.fillText(eraText, 22, eraY);
 
-  // 视角提示
-  const manualActive = keys.a || keys.d;
-  ctx.font = 'bold 16px system-ui, sans-serif';
-  ctx.lineWidth = 4;
+  // 视角提示（触摸设备提示"拖动画面"）
+  const manualActive = keys.a || keys.d || MOBILE.panning;
+  const hintPx = Math.round(16 * hs);
+  ctx.font = `bold ${hintPx}px system-ui, sans-serif`;
+  ctx.lineWidth = Math.max(3, Math.round(hintPx * 0.25));
   ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  const camText = manualActive ? '视角移动中…' : '按 A / D 自由移动视角';
-  ctx.strokeText(camText, 22, 110);
+  const camText = manualActive
+    ? '视角移动中…'
+    : (MOBILE.touch ? '拖动画面移动视角' : '按 A / D 自由移动视角');
+  const camY = eraY + Math.round(30 * hs);
+  ctx.strokeText(camText, 22, camY);
   ctx.fillStyle = manualActive ? '#7ee0ff' : '#c8d4e0';
-  ctx.fillText(camText, 22, 110);
+  ctx.fillText(camText, 22, camY);
 
   // 右上角：敌方形象 + 难度（难度动态左移，避免和敌方形象重叠）
   ctx.textAlign = 'right';
-  ctx.font = 'bold 20px system-ui, sans-serif';
+  const rightPx = Math.round(20 * hs);
+  ctx.font = `bold ${rightPx}px system-ui, sans-serif`;
   const eText = `敌方形象：${ENEMY_BASE_NAMES[game.enemyEra] || '西装藤壶'}`;
   const eWidth = ctx.measureText(eText).width;
-  ctx.lineWidth = 5;
+  const eY = pillBelow
+    ? camY + Math.round(28 * hs)      // 手机上放到左上角 HUD 下面，和"我方版本"错开
+    : safe.top + Math.round(40 * hs);
+  ctx.lineWidth = Math.max(3, Math.round(rightPx * 0.25));
   ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.strokeText(eText, W - 22, 40);
+  ctx.strokeText(eText, hudR, eY);
   ctx.fillStyle = '#a8c8ff';
-  ctx.fillText(eText, W - 22, 40);
+  ctx.fillText(eText, hudR, eY);
 
   const diffNames  = { easy: '简单', normal: '普通', hard: '困难' };
   const diffColors = { easy: '#7ee08a', normal: '#a8c8ff', hard: '#ff8a7e' };
   const dName  = diffNames[game.difficulty]  || '普通';
   const dColor = diffColors[game.difficulty] || '#a8c8ff';
   const dText  = '难度：' + dName;
-  const dX = W - 22 - eWidth - 28;
-  ctx.font = 'bold 20px system-ui, sans-serif';
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.strokeText(dText, dX, 40);
+  // 手机上是两行（都在开关下面），宽屏是同一行左移
+  const dY = pillBelow ? eY + Math.round(26 * hs) : eY;
+  const dX = pillBelow ? hudR : hudR - eWidth - 28;
+  ctx.strokeText(dText, dX, dY);
   ctx.fillStyle = dColor;
-  ctx.fillText(dText, dX, 40);
+  ctx.fillText(dText, dX, dY);
+  ctx.textAlign = 'left';
 
   // ---------- 技能释放：屏幕中央大字 ----------
   if (game.skillAnnounce > 0) {
@@ -283,8 +558,8 @@ function drawUI() {
     ctx.globalAlpha = a;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 64px system-ui, sans-serif';
-    ctx.lineWidth = 10;
+    ctx.font = `bold ${Math.round(64 * hs)}px system-ui, sans-serif`;
+    ctx.lineWidth = Math.max(4, Math.round(64 * hs * 0.16));
     ctx.strokeStyle = 'rgba(0,0,0,0.85)';
     ctx.strokeText('现在是，梁文谷时刻！', W / 2, H * 0.32);
     ctx.fillStyle = '#7ee0ff';
@@ -301,7 +576,7 @@ function drawUI() {
     ctx.globalAlpha = a;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 24px system-ui, sans-serif';
+    ctx.font = `bold ${Math.round(24 * hs)}px system-ui, sans-serif`;
     ctx.lineWidth = 6;
     ctx.strokeStyle = 'rgba(0,0,0,0.8)';
     ctx.strokeText('技能已解锁：梁文谷时刻（按 F 释放）', W / 2, H * 0.42);
@@ -323,7 +598,7 @@ function drawUI() {
       ctx.globalAlpha = a;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.font = 'bold 22px system-ui, sans-serif';
+      ctx.font = `bold ${Math.round(22 * hs)}px system-ui, sans-serif`;
       ctx.lineWidth = 5;
       ctx.strokeStyle = 'rgba(0,0,0,0.85)';
       ctx.strokeText('DeepSeek 可升级！', 24, H * 0.55);
@@ -342,7 +617,7 @@ function drawUI() {
     ctx.globalAlpha = a;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 22px system-ui, sans-serif';
+    ctx.font = `bold ${Math.round(22 * hs)}px system-ui, sans-serif`;
     ctx.lineWidth = 5;
     ctx.strokeStyle = 'rgba(0,0,0,0.85)';
     ctx.strokeText('藤壶开始变异了！', W - 24, H * 0.55);
@@ -360,7 +635,7 @@ function drawUI() {
     ctx.globalAlpha = a;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 36px system-ui, sans-serif';
+    ctx.font = `bold ${Math.round(36 * hs)}px system-ui, sans-serif`;
     ctx.lineWidth = 7;
     ctx.strokeStyle = 'rgba(0,0,0,0.85)';
     ctx.strokeText('理中客奶鲸来了！！！', W / 2, H * 0.18);
@@ -763,8 +1038,8 @@ function drawUI() {
       ? `成功打败${enemyName}！`
       : '再接再厉！下次一定可以！';
     const resultColor = won ? '#ffd94a' : '#ff8a7e';
-    ctx.font = 'bold 36px system-ui, sans-serif';
-    ctx.lineWidth = 7;
+    ctx.font = `bold ${Math.round(36 * hs)}px system-ui, sans-serif`;
+    ctx.lineWidth = Math.max(4, Math.round(36 * hs * 0.19));
     ctx.strokeStyle = 'rgba(0,0,0,0.85)';
     ctx.strokeText(resultText, W / 2, H * 0.12);
     ctx.fillStyle = resultColor;
@@ -772,7 +1047,7 @@ function drawUI() {
 
     // CG 图（胜利 / 战败）
     const cgH = Math.min(H * 0.52, 430);
-    const cgW = cgH * 1.05;
+    const cgW = Math.min(cgH * 1.05, W - 40);      // 竖屏时别超出屏幕
     const cgX = W / 2 - cgW / 2;
     const cgY = H * 0.24;
     const cg = won ? ASSETS.cgVictory : ASSETS.cgDefeat;
@@ -802,13 +1077,16 @@ function drawUI() {
     roundRect(rb.x, rb.y, rb.w, rb.h, 12);
     ctx.stroke();
 
-    ctx.font = 'bold 20px system-ui, sans-serif';
+    ctx.font = `bold ${Math.round(20 * hs)}px system-ui, sans-serif`;
     ctx.fillStyle = '#ffffff';
     ctx.fillText('再 来 一 局', W / 2, rb.y + 34);
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
   }
+
+  // 触摸设备：右上角「强制横屏」开关画在最上层（对局、结算界面都点得到）
+  drawOrientToggle();
 }
 
 /* ---------------- 重开 ---------------- */
@@ -859,3 +1137,28 @@ function restart() {
 
   layoutUI();
 }
+
+/* ---------------- 启动：设备判定 + 监听屏幕变化 ---------------- */
+detectDevice();
+initForceLandscape();
+
+// 手机旋转、地址栏收起、进/出全屏都要重算布局（同一帧里的多次触发合并成一次）
+let resizePending = false;
+function scheduleResize() {
+  if (resizePending) return;
+  resizePending = true;
+  const run = () => { resizePending = false; resize(); };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+  else run();
+}
+
+window.addEventListener('orientationchange', scheduleResize);
+if (window.visualViewport && window.visualViewport.addEventListener) {
+  window.visualViewport.addEventListener('resize', scheduleResize);
+}
+document.addEventListener('fullscreenchange', scheduleResize);
+if (typeof screen !== 'undefined' && screen.orientation && screen.orientation.addEventListener) {
+  screen.orientation.addEventListener('change', scheduleResize);
+}
+// 长按不要弹系统菜单（手机上会盖住按钮）
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());

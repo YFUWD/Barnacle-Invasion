@@ -56,4 +56,13 @@ const game = {
 
 /* ---------------- UI 热区 ---------------- */
 // 由 17_ui.js 的 layoutUI() 每次 resize / 升级时重算
-const ui = { unitButtons: [], upgradeButton: null, restartButton: null };
+const ui = {
+  unitButtons: [],
+  upgradeButton: null,
+  restartButton: null,
+  turretSlots: null,
+  skillButton: null,
+  menuButtons: [],
+  menuHintY: 0,
+  forceBtn: null,        // 手机上的「强制横屏」开关（触摸设备才会建）
+};

@@ -301,10 +301,8 @@ function drawEnemyEraFlash() {
   ctx.restore();
 }
 
-/* ---------------- 主渲染（顺序就是图层顺序）---------------- */
-function render() {
-  ctx.clearRect(0, 0, W, H);
-
+/* ---------------- 世界层（天空/地形/基地/单位/特效，不含 UI）---------------- */
+function drawWorld() {
   drawSky();
   drawTerrain();
 
@@ -331,5 +329,28 @@ function render() {
   drawWhales();
   drawParticles();
   drawFloatTexts();
+}
+
+/* ---------------- 主渲染（顺序就是图层顺序）---------------- */
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  // 窄视口（手机竖屏）把世界整体缩小，保证至少看得见 ~720 世界像素宽。
+  // 缩放期间临时把 W / H / groundY 换成"世界空间"的值，
+  // 这样绘制函数里的 fillRect(0,0,W,H)、groundY 依旧铺满整屏、对齐同一条地平线。
+  // UI 用原尺寸画（restore 之后才调用），按钮和字号不受影响。
+  const z = worldZoom();
+  if (z !== 1) {
+    ctx.save();
+    ctx.scale(z, z);
+    const rW = W, rH = H, rG = groundY;
+    W = rW / z; H = rH / z; groundY = rG / z;
+    drawWorld();
+    W = rW; H = rH; groundY = rG;
+    ctx.restore();
+  } else {
+    drawWorld();
+  }
+
   drawUI();
 }

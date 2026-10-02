@@ -1,8 +1,13 @@
 /* =========================================================
    18 玩家操作
    ---------------------------------------------------------
-   鼠标 / 触屏：点底部按钮出兵，点右下角升级基地
-   键盘：A/D 移动视角，1~2 出兵，U 升级，R / 空格 重开
+   鼠标 / 触屏：点底部按钮出兵、点右下角升级基地、点炮塔槽位、点技能；
+                在空处按住拖动 = 平移视角（手机没有 A/D 键，靠这个看战场）
+   键盘：A/D 移动视角，Z/X/C 出兵，Q 升级，W/E/R 炮塔，F 技能，
+        1/2/3 变速，M 静音，L 强制横屏，R / 空格 重开
+
+   注意：画面在手机竖屏"强制横屏"时是转过 90° 的，
+   所以指针坐标要先过 screenToView() 换算成游戏视口坐标再用（见 17_ui.js）。
    ========================================================= */
 
 /* 从菜单开始一局：设定难度并重置 */
@@ -57,37 +62,41 @@ function tryUpgrade() {
   layoutUI();          // 兵种按钮换一批，热区要重算
 }
 
-/* ---------------- 指针 ---------------- */
+/* ---------------- 指针（鼠标 / 触屏） ---------------- */
+// 按住空处拖动 = 平移视角；点按钮是"按下即生效"（和以前一样）
+let dragPan = null;
+
+function eventToView(e) {
+  const rect = canvas.getBoundingClientRect();
+  return screenToView(e.clientX - rect.left, e.clientY - rect.top);
+}
+
 canvas.addEventListener('pointerdown', (e) => {
   unlockAudio();       // 第一次点击就是"用户手势"，先把音频上下文建起来
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
+  const p = eventToView(e);
 
-  // 菜单界面：点击难度按钮开始（按钮位置现算，不依赖 ui.menuButtons）
+  // 「强制横屏」开关（触摸设备才有，菜单 / 对局 / 结算界面都点得到）
+  if (ui.forceBtn && MOBILE.touch && hitTest(p.x, p.y, ui.forceBtn)) {
+    SFX.click();
+    toggleForceLandscape();
+    return;
+  }
+
+  // 菜单界面：点击难度按钮开始
   if (!game.started) {
-    const mbw = 170, mbh = 70, mgap = 24;
-    const totalMW = mbw * 3 + mgap * 2;
-    const startMX = W / 2 - totalMW / 2;
-    const mby = H / 2 + 30;
-    const diffs = ['easy', 'normal', 'hard'];
-    for (let i = 0; i < 3; i++) {
-      const bx = startMX + i * (mbw + mgap);
-      if (mx >= bx && mx <= bx + mbw && my >= mby && my <= mby + mbh) {
-        startGame(diffs[i]);
-        return;
-      }
+    for (const b of ui.menuButtons) {
+      if (hitTest(p.x, p.y, b)) { startGame(b.diff); return; }
     }
     return;
   }
 
   if (game.over) {
-    if (ui.restartButton && hitTest(mx, my, ui.restartButton)) { SFX.click(); restart(); }
+    if (ui.restartButton && hitTest(p.x, p.y, ui.restartButton)) { SFX.click(); restart(); }
     return;
   }
 
   // 技能按钮
-  if (ui.skillButton && hitTest(mx, my, ui.skillButton)) {
+  if (ui.skillButton && hitTest(p.x, p.y, ui.skillButton)) {
     tryActivateSkill();
     return;
   }
@@ -95,7 +104,7 @@ canvas.addEventListener('pointerdown', (e) => {
   // 炮塔槽位（左下角）
   if (ui.turretSlots) {
     for (const slot of ui.turretSlots) {
-      if (hitTest(mx, my, slot)) {
+      if (hitTest(p.x, p.y, slot)) {
         const t = game.turrets[slot.slot];
         if (!t) tryBuildTurret(slot.slot);
         else tryUpgradeTurret(slot.slot);
@@ -105,10 +114,37 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   for (const btn of ui.unitButtons) {
-    if (hitTest(mx, my, btn)) { trySpawn(btn.id); return; }
+    if (hitTest(p.x, p.y, btn)) { trySpawn(btn.id); return; }
   }
-  if (ui.upgradeButton && hitTest(mx, my, ui.upgradeButton)) tryUpgrade();
+  if (ui.upgradeButton && hitTest(p.x, p.y, ui.upgradeButton)) { tryUpgrade(); return; }
+
+  // 没点到任何按钮 → 开始拖动画面（触摸屏唯一的平移视角方式）
+  dragPan = { id: e.pointerId, startX: p.x, camStart: camX, moved: false };
+  if (canvas.setPointerCapture) {
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 不支持就算了 */ }
+  }
 });
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!dragPan || e.pointerId !== dragPan.id) return;
+  const p = eventToView(e);
+  const dx = p.x - dragPan.startX;              // 视口方向上的位移（转过 90° 时已换算过）
+  if (!dragPan.moved && Math.abs(dx) < 6) return;   // 手指没怎么动，不算拖动
+  dragPan.moved = true;
+  MOBILE.panning = true;
+  // 世界被缩小了 z 倍，所以视口里拖 dx 等于世界里的 dx / z
+  camX = clamp(dragPan.camStart - dx / worldZoom(), 0, maxCameraX());
+});
+
+function endPan(e) {
+  if (!dragPan) return;
+  if (e && e.pointerId !== undefined && e.pointerId !== dragPan.id) return;
+  dragPan = null;
+  MOBILE.panning = false;
+}
+canvas.addEventListener('pointerup', endPan);
+canvas.addEventListener('pointercancel', endPan);
+canvas.addEventListener('pointerleave', endPan);
 
 /* ---------------- 键盘 ---------------- */
 window.addEventListener('keydown', (e) => {
@@ -117,6 +153,9 @@ window.addEventListener('keydown', (e) => {
 
   // 静音开关：M（任何界面都能按）
   if (e.key === 'm' || e.key === 'M') { toggleMute(); return; }
+
+  // 强制横屏开关：L（手机上没键盘也无所谓，右上角有按钮）
+  if (e.key === 'l' || e.key === 'L') { toggleForceLandscape(); return; }
 
   // 菜单界面：按 1/2/3 选难度
   if (!game.started) {
