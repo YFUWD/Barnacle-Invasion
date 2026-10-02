@@ -1,53 +1,50 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="description" content="藤壶的入侵 —— 纯前端横版推塔小游戏：造兵、升级基地、推平藤壶母巢">
+<meta name="description" content="钘ゅ６鐨勫叆渚?鈥斺€?绾墠绔í鐗堟帹濉斿皬娓告垙锛氶€犲叺銆佸崌绾у熀鍦般€佹帹骞宠棨澹舵瘝宸?>
 <meta name="theme-color" content="#0a0a12">
-<!-- 手机上"添加到主屏幕"后按独立应用打开（没有地址栏，强制横屏更好用） -->
+<!-- 鎵嬫満涓?娣诲姞鍒颁富灞忓箷"鍚庢寜鐙珛搴旂敤鎵撳紑锛堟病鏈夊湴鍧€鏍忥紝寮哄埗妯睆鏇村ソ鐢級 -->
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="藤壶的入侵">
-<title>藤壶的入侵</title>
-<!-- 图标内嵌成 data URI，不依赖外部文件，file:// 和 GitHub Pages 都不会 404 -->
+<meta name="apple-mobile-web-app-title" content="钘ゅ６鐨勫叆渚?>
+<title>钘ゅ６鐨勫叆渚?/title>
+<!-- 鍥炬爣鍐呭祵鎴?data URI锛屼笉渚濊禆澶栭儴鏂囦欢锛宖ile:// 鍜?GitHub Pages 閮戒笉浼?404 -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0a12'/%3E%3Cpath d='M11 8 H21 L27 26 H5 Z' fill='%23a8c8e0'/%3E%3Cellipse cx='16' cy='8' rx='5' ry='2.6' fill='%230a0a12'/%3E%3Cellipse cx='16' cy='8' rx='2.4' ry='1.2' fill='%234a90d9'/%3E%3C/svg%3E">
-<!-- 分享链接时的预览信息（图片用线上地址，本地打开时无效属正常） -->
+<!-- 鍒嗕韩閾炬帴鏃剁殑棰勮淇℃伅锛堝浘鐗囩敤绾夸笂鍦板潃锛屾湰鍦版墦寮€鏃舵棤鏁堝睘姝ｅ父锛?-->
 <meta property="og:type" content="website">
-<meta property="og:title" content="藤壶的入侵">
-<meta property="og:description" content="纯前端横版推塔小游戏：造兵、升基地、建炮塔，推平藤壶母巢。点开即玩，不用安装。">
+<meta property="og:title" content="钘ゅ６鐨勫叆渚?>
+<meta property="og:description" content="绾墠绔í鐗堟帹濉斿皬娓告垙锛氶€犲叺銆佸崌鍩哄湴銆佸缓鐐锛屾帹骞宠棨澹舵瘝宸€傜偣寮€鍗崇帺锛屼笉鐢ㄥ畨瑁呫€?>
 <meta property="og:image" content="https://yfuwd.github.io/Barnacle-Invasion/preview.png">
-<link rel="stylesheet" href="css/style.css?v=1">
+<link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
 <canvas id="game"></canvas>
 
 <!--
-  拆分说明：原来是一个 index.html 里塞了全部代码，现在按模块拆到 js/ 下。
-  所有文件都是普通 <script>（不是 ES module），按顺序加载、共享全局作用域，
-  这样直接用 file:// 双击打开也能跑，不需要起服务器。
-  模块编号 = 加载顺序，改动请保持依赖在前。
--->
-<script src="js/00_audio.js?v=1"></script>
-<script src="js/01_config.js?v=1"></script>
-<script src="js/02_utils.js?v=1"></script>
-<script src="js/03_assets.js?v=1"></script>
-<script src="js/04_state.js?v=1"></script>
-<script src="js/05_units.js?v=1"></script>
-<script src="js/06_base.js?v=1"></script>
-<script src="js/07_spawn.js?v=1"></script>
-<script src="js/08_combat.js?v=1"></script>
-<script src="js/09_ai.js?v=1"></script>
-<script src="js/10_camera.js?v=1"></script>
-<script src="js/11_update.js?v=1"></script>
-<script src="js/12_render_sky.js?v=1"></script>
-<script src="js/13_render_terrain.js?v=1"></script>
-<script src="js/14_render_base.js?v=1"></script>
-<script src="js/15_render_unit.js?v=1"></script>
-<script src="js/16_render_fx.js?v=1"></script>
-<script src="js/17_ui.js?v=1"></script>
-<script src="js/18_input.js?v=1"></script>
-<script src="js/19_main.js?v=1"></script>
+  鎷嗗垎璇存槑锛氬師鏉ユ槸涓€涓?index.html 閲屽浜嗗叏閮ㄤ唬鐮侊紝鐜板湪鎸夋ā鍧楁媶鍒?js/ 涓嬨€?  鎵€鏈夋枃浠堕兘鏄櫘閫?<script>锛堜笉鏄?ES module锛夛紝鎸夐『搴忓姞杞姐€佸叡浜叏灞€浣滅敤鍩燂紝
+  杩欐牱鐩存帴鐢?file:// 鍙屽嚮鎵撳紑涔熻兘璺戯紝涓嶉渶瑕佽捣鏈嶅姟鍣ㄣ€?  妯″潡缂栧彿 = 鍔犺浇椤哄簭锛屾敼鍔ㄨ淇濇寔渚濊禆鍦ㄥ墠銆?-->
+<script src="js/00_audio.js?v=2"></script>
+<script src="js/01_config.js?v=2"></script>
+<script src="js/02_utils.js?v=2"></script>
+<script src="js/03_assets.js?v=2"></script>
+<script src="js/04_state.js?v=2"></script>
+<script src="js/05_units.js?v=2"></script>
+<script src="js/06_base.js?v=2"></script>
+<script src="js/07_spawn.js?v=2"></script>
+<script src="js/08_combat.js?v=2"></script>
+<script src="js/09_ai.js?v=2"></script>
+<script src="js/10_camera.js?v=2"></script>
+<script src="js/11_update.js?v=2"></script>
+<script src="js/12_render_sky.js?v=2"></script>
+<script src="js/13_render_terrain.js?v=2"></script>
+<script src="js/14_render_base.js?v=2"></script>
+<script src="js/15_render_unit.js?v=2"></script>
+<script src="js/16_render_fx.js?v=2"></script>
+<script src="js/17_ui.js?v=2"></script>
+<script src="js/18_input.js?v=2"></script>
+<script src="js/19_main.js?v=2"></script>
 </body>
 </html>
