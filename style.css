@@ -1,0 +1,52 @@
+/* =========================================================
+   藤壶的入侵 · 页面样式
+   ---------------------------------------------------------
+   画布铺满整个视口（游戏内部自己按 devicePixelRatio 缩放 + 手机适配），
+   所以这里只负责底色、字体、不选中，以及"别让手机浏览器抢走手势"。
+
+   移动端要点：
+     · touch-action: none  → 手指在画布上拖动不会被当成滚动/双击缩放
+     · overscroll-behavior → 关掉下拉刷新、边缘橡皮筋
+     · position: fixed     → iOS Safari 上地址栏收起/展开时画面不跳
+     · --sa-* 四个自定义属性把安全区（刘海 / 小白条）读给 JS 用
+   ========================================================= */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;          /* 现代浏览器：按"可见视口"算高度 */
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #0a0a12;
+  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+  background: #0a0a12;
+  /* 画布自己处理所有手势：拖动平移视角、点按钮出兵 */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}

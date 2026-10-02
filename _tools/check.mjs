@@ -75,7 +75,8 @@ if (!missing.length && !extra.length) pass(`顺序一致，共 ${listed.length} 
 console.log('\n[3/3] 跨文件引用（粗查：只查裸调用）');
 // 允许前置缩进：函数内部的局部 const/let/function 也算"本地已定义"，
 // 否则会把 toX(...) 这种循环里的局部小工具函数误报成"未定义"
-const DEF_RE = /^[ \t]*(?:function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*))/gm;
+// 也匹配 `async function foo()`（异步函数同样是函数声明，会提升）
+const DEF_RE = /^[ \t]*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)|^[ \t]*(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm;
 // (?<![.\w$]) 保证不是 obj.method() 这种成员调用；
 // (?!\s*\() 之外还要排掉语言关键字（for / while / return / typeof ...）
 const KEYWORDS = 'for|while|if|else|return|switch|catch|typeof|do|in|of|new|delete|void|await|yield|throw|case';
