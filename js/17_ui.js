@@ -23,9 +23,12 @@ const MOBILE = {
   sw: 0, sh: 0,           // 画布 CSS 尺寸（设备物理朝向）
   safe: { top: 0, right: 0, bottom: 0, left: 0 },   // 物理朝向的安全区（刘海/小白条）
   panning: false,         // 正在拖动画面
+  askOpen: false,         // 「要不要全屏横屏」询问框开着
+  askShown: false,        // 这次打开已经问过了（问过就不再弹）
 };
 
 const FORCE_LS_KEY = 'barnacle.forceLandscape';
+const ASK_LS_KEY = 'barnacle.askFullscreen';   // 'yes' / 'no'：回答过就不再弹
 
 function detectDevice() {
   const mq = (q) => (typeof window.matchMedia === 'function' ? window.matchMedia(q).matches : false);
@@ -113,9 +116,59 @@ async function setForceLandscape(on) {
     MOBILE.nativeLock = false;
   }
   resize();
+  // 全屏/旋转生效要一点点时间，补一次重排，免得刚转完还按竖屏排版
+  if (typeof setTimeout === 'function') setTimeout(resize, 350);
 }
 
 function toggleForceLandscape() { return setForceLandscape(!MOBILE.forceLandscape); }
+
+/* 第一次触摸时再试一次原生旋转：requestFullscreen 必须由用户手势触发，
+   页面刚打开时（还没点过）只能先"画面内旋转"顶着，点一下之后就能真进全屏 + 原生横屏 */
+let nativeLockRetryDone = false;
+function retryNativeLock() {
+  if (nativeLockRetryDone) return;
+  nativeLockRetryDone = true;
+  if (!MOBILE.touch || !MOBILE.forceLandscape || MOBILE.nativeLock) return;
+  setForceLandscape(true);
+}
+
+/* ---------------- 「要不要全屏横屏」询问框 ---------------- */
+function shouldAskFullscreen() {
+  if (!MOBILE.phone) return false;            // 只在手机上问
+  if (game.started) return false;             // 打起来了就别弹了
+  if (MOBILE.askShown || MOBILE.askOpen) return false;
+  if (MOBILE.sh <= MOBILE.sw) return false;   // 已经是横屏，不用问
+  if (MOBILE.forceLandscape) return false;    // 已经开着
+  let saved = null;
+  try { saved = localStorage.getItem(ASK_LS_KEY); } catch (e) { saved = null; }
+  return saved === null;                      // 回答过就不再问
+}
+
+/* 由 resize() 调用：该问就弹出来 */
+function maybeAskFullscreen() {
+  const portrait = MOBILE.sh > MOBILE.sw;
+  if (MOBILE.askOpen && (!portrait || game.started)) {   // 中途转了屏/开了局 → 收起来
+    MOBILE.askOpen = false;
+    layoutUI();
+    return;
+  }
+  if (!shouldAskFullscreen()) return;
+  MOBILE.askShown = true;
+  MOBILE.askOpen = true;
+  layoutUI();
+}
+
+async function answerAskFullscreen(yes) {
+  MOBILE.askOpen = false;
+  try { localStorage.setItem(ASK_LS_KEY, yes ? 'yes' : 'no'); } catch (e) { /* 隐私模式无所谓 */ }
+  if (yes) {
+    await setForceLandscape(true);      // 全屏 + 原生旋转；不支持就画面内旋转兜底
+  } else {
+    MOBILE.forceLandscape = false;
+    saveForceLandscape();
+    layoutUI();
+  }
+}
 
 /* ---------------- 尺寸 ---------------- */
 function resize() {
@@ -142,12 +195,14 @@ function resize() {
   groundY = Math.round(H * 0.74);
   readSafeArea();
   layoutUI();
+  maybeAskFullscreen();      // 手机竖屏 + 还没问过 → 弹「是否强制全屏」
 }
 
 /* ---------------- 按钮热区 ---------------- */
 function layoutUI() {
   ui.unitButtons = [];
   ui.forceBtn = null;
+  ui.askButtons = null;
 
   const safe = viewSafe();
   if (MOBILE.phone && H > W) layoutPhonePortrait(safe);
@@ -155,6 +210,23 @@ function layoutUI() {
 
   layoutMenu(safe);
   layoutOrientToggle(safe);
+  if (MOBILE.askOpen) layoutAskPanel(safe);
+}
+
+/* 询问框：竖屏居中的一块面板 + 两个按钮（手机上拇指好按） */
+function layoutAskPanel(safe) {
+  const w = Math.min(W - safe.left - safe.right - 40, 360);
+  const h = 272;
+  const x = W / 2 - w / 2;
+  const y = Math.max(safe.top + 16, H * 0.30);
+  ui.askPanel = { x, y, w, h };
+
+  const bw = w - 40;
+  const bx = x + 20;
+  ui.askButtons = [
+    { id: 'yes', label: '全屏 + 横屏',     x: bx, y: y + h - 132, w: bw, h: 58, primary: true },
+    { id: 'no',  label: '先不用，竖屏玩',  x: bx, y: y + h - 64,  w: bw, h: 48, primary: false },
+  ];
 }
 
 /* 宽屏（PC / 平板 / 手机横屏）：底部一整排，整体缩放去适配宽度 */
@@ -346,6 +418,7 @@ function drawMenu() {
 
   // 触摸设备：强制横屏开关
   drawOrientToggle();
+  drawAskFullscreen();      // 询问框盖在最上层（菜单里也弹）
 
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
@@ -380,6 +453,73 @@ function drawOrientToggle() {
   ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 1);
   ctx.restore();
 
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+/* 「要不要全屏横屏」询问框（手机竖屏第一次打开时弹，点完记住答案） */
+function drawAskFullscreen() {
+  if (!MOBILE.askOpen) return;
+  const p = ui.askPanel;
+  const btns = ui.askButtons;
+  if (!p || !btns) return;
+  const safe = viewSafe();
+
+  // 压暗整屏
+  ctx.save();
+  ctx.fillStyle = 'rgba(6,10,20,0.68)';
+  ctx.fillRect(0, 0, W, H);
+
+  // 面板
+  ctx.fillStyle = 'rgba(18,26,46,0.98)';
+  roundRect(p.x, p.y, p.w, p.h, 16);
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(140,200,255,0.85)';
+  roundRect(p.x, p.y, p.w, p.h, 16);
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.font = 'bold 22px system-ui, sans-serif';
+  ctx.fillStyle = '#ffd94a';
+  ctx.fillText('要用全屏横屏玩吗？', p.x + p.w / 2, p.y + 38);
+
+  ctx.font = '14px system-ui, sans-serif';
+  ctx.fillStyle = '#c6dcff';
+  ctx.fillText('横屏视野更宽，能看到整片战场，', p.x + p.w / 2, p.y + 76);
+  ctx.fillText('也能少误触。点了会进全屏并自动横过来。', p.x + p.w / 2, p.y + 100);
+  ctx.fillStyle = '#8898b0';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.fillText('（之后也能点右上角随时切换）', p.x + p.w / 2, p.y + 124);
+
+  for (const b of btns) {
+    if (b.primary) {
+      ctx.fillStyle = 'rgba(40,90,60,0.95)';
+      roundRect(b.x, b.y, b.w, b.h, 12);
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(120,230,150,0.95)';
+      roundRect(b.x, b.y, b.w, b.h, 12);
+      ctx.stroke();
+      ctx.fillStyle = '#d8ffe0';
+      ctx.font = 'bold 20px system-ui, sans-serif';
+    } else {
+      ctx.fillStyle = 'rgba(24,32,48,0.95)';
+      roundRect(b.x, b.y, b.w, b.h, 12);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(140,160,190,0.7)';
+      roundRect(b.x, b.y, b.w, b.h, 12);
+      ctx.stroke();
+      ctx.fillStyle = '#aab6c8';
+      ctx.font = 'bold 16px system-ui, sans-serif';
+    }
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 1);
+  }
+
+  ctx.restore();
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 }
@@ -1087,6 +1227,8 @@ function drawUI() {
 
   // 触摸设备：右上角「强制横屏」开关画在最上层（对局、结算界面都点得到）
   drawOrientToggle();
+  // 询问框：一旦打开就盖在所有东西上面
+  drawAskFullscreen();
 }
 
 /* ---------------- 重开 ---------------- */

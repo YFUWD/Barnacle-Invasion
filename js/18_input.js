@@ -75,6 +75,18 @@ canvas.addEventListener('pointerdown', (e) => {
   unlockAudio();       // 第一次点击就是"用户手势"，先把音频上下文建起来
   const p = eventToView(e);
 
+  // 之前选过"全屏横屏"的话，第一次触摸时才能真正进全屏 + 原生旋转
+  retryNativeLock();
+
+  // 「要不要全屏横屏」询问框：盖在最上层，先处理它
+  if (MOBILE.askOpen) {
+    for (const b of (ui.askButtons || [])) {
+      if (hitTest(p.x, p.y, b)) { SFX.click(); answerAskFullscreen(b.id === 'yes'); return; }
+    }
+    answerAskFullscreen(false);    // 点空白处 = 先不用（之后还能点右上角开关）
+    return;
+  }
+
   // 「强制横屏」开关（触摸设备才有，菜单 / 对局 / 结算界面都点得到）
   if (ui.forceBtn && MOBILE.touch && hitTest(p.x, p.y, ui.forceBtn)) {
     SFX.click();
@@ -148,6 +160,13 @@ canvas.addEventListener('pointerleave', endPan);
 
 /* ---------------- 键盘 ---------------- */
 window.addEventListener('keydown', (e) => {
+  // 询问框开着：只认「全屏横屏 / 先不用」
+  if (MOBILE.askOpen) {
+    if (e.key === '1' || e.key === 'y' || e.key === 'Y' || e.key === 'Enter') { answerAskFullscreen(true); return; }
+    if (e.key === '2' || e.key === 'n' || e.key === 'N' || e.key === 'Escape' || e.key === ' ') { answerAskFullscreen(false); return; }
+    return;
+  }
+
   if (e.key === 'a' || e.key === 'A') keys.a = true;
   if (e.key === 'd' || e.key === 'D') keys.d = true;
 

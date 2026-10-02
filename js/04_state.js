@@ -65,4 +65,6 @@ const ui = {
   menuButtons: [],
   menuHintY: 0,
   forceBtn: null,        // 手机上的「强制横屏」开关（触摸设备才会建）
+  askPanel: null,        // 「要不要全屏横屏」询问框面板
+  askButtons: null,      // 询问框的两个按钮
 };
